@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -25,9 +25,23 @@ app.add_middleware(
 )
 
 
+class ConversationTurn(BaseModel):
+    role: Literal["user", "assistant"]
+    content: str = Field(min_length=1, max_length=2000)
+
+    @field_validator("content")
+    @classmethod
+    def content_must_not_be_blank(cls, value: str) -> str:
+        content = value.strip()
+        if not content:
+            raise ValueError("Conversation messages cannot be blank")
+        return content
+
+
 class AskRequest(BaseModel):
     question: str = Field(min_length=1, max_length=2000)
     top_k: int = Field(default=5, ge=1, le=10)
+    history: list[ConversationTurn] = Field(default_factory=list, max_length=10)
 
     @field_validator("question")
     @classmethod
@@ -71,7 +85,11 @@ def ask(payload: AskRequest, request: Request) -> dict[str, Any]:
         }
 
     try:
-        return service.ask(payload.question.strip(), payload.top_k)
+        return service.ask(
+            payload.question.strip(),
+            payload.top_k,
+            [turn.model_dump() for turn in payload.history],
+        )
     except RuntimeError as error:
         if "GROQ_API" in str(error):
             raise HTTPException(

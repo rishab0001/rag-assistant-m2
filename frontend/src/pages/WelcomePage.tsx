@@ -157,6 +157,9 @@ export default function WelcomePage() {
 
     const conversationId = activeConversationId ?? createConversationId();
     setActiveConversationId(conversationId);
+    const history = (activeConversation?.messages ?? [])
+      .slice(-8)
+      .map(({ role, content }) => ({ role, content }));
     appendMessage(conversationId, { role: "user", content: prompt, id: createConversationId() });
     setLoadingConversationId(conversationId);
 
@@ -164,7 +167,7 @@ export default function WelcomePage() {
       const response = await fetch("/api/ask", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ question: prompt, top_k: 5 }),
+        body: JSON.stringify({ question: prompt, top_k: 5, history }),
       });
       const payload = (await response.json()) as
         AskResponse | { detail?: string };

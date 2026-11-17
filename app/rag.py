@@ -172,15 +172,57 @@ class RagService:
             exact=True,
         ).count
 
-    def ask(self, question: str, top_k: int = 5) -> dict[str, Any]:
+    def ask(
+        self,
+        question: str,
+        top_k: int = 5,
+        history: list[dict[str, str]] | None = None,
+    ) -> dict[str, Any]:
         collection_count = self.count()
         if collection_count == 0:
             return {"answer": NO_ANSWER, "sources": []}
 
+        history = (history or [])[-8:]
+        api_key = os.getenv("GROQ_API") or os.getenv("GROQ_API_KEY")
+        llm = None
+        retrieval_question = question
+        if history and api_key:
+            llm = ChatGroq(
+                groq_api_key=api_key,
+                model_name=DEFAULT_GROQ_MODEL,
+                temperature=0.1,
+                max_tokens=2048,
+            )
+            conversation = "\n".join(
+                f"{turn['role'].capitalize()}: {turn['content']}" for turn in history
+            )
+            try:
+                rewritten = llm.invoke(
+                    [
+                        SystemMessage(
+                            content=(
+                                "Rewrite the latest user question as a standalone search query, "
+                                "using the conversation only to resolve references such as 'it' "
+                                "or 'that motor'. Preserve the user's intent. Return only the "
+                                "query; do not answer it. If it is already standalone, return it unchanged."
+                            )
+                        ),
+                        HumanMessage(
+                            content=f"Conversation:\n{conversation}\n\nLatest question: {question}"
+                        ),
+                    ]
+                )
+                rewritten_content = rewritten.content
+                if isinstance(rewritten_content, str) and rewritten_content.strip():
+                    retrieval_question = rewritten_content.strip().strip('"')
+            except Exception:
+                # Keep the original query if clarification fails; normal RAG can still proceed.
+                pass
+
         matches = self.client.query_points(
             collection_name=self.collection_name,
             query=models.Document(
-                text=question,
+                text=retrieval_question,
                 model=QDRANT_INFERENCE_MODEL,
             ),
             limit=min(top_k, collection_count),
@@ -204,26 +246,34 @@ class RagService:
         if not sources:
             return {"answer": NO_ANSWER, "sources": []}
 
-        api_key = os.getenv("GROQ_API") or os.getenv("GROQ_API_KEY")
         if not api_key:
             raise RuntimeError("GROQ_API is not configured")
+        if llm is None:
+            llm = ChatGroq(
+                groq_api_key=api_key,
+                model_name=DEFAULT_GROQ_MODEL,
+                temperature=0.1,
+                max_tokens=2048,
+            )
 
-        llm = ChatGroq(
-            groq_api_key=api_key,
-            model_name=DEFAULT_GROQ_MODEL,
-            temperature=0.1,
-            max_tokens=1024,
-        )
         labeled_context = "\n\n".join(
             f"[{index}] {source['content']}"
             for index, source in enumerate(sources, start=1)
+        )
+        conversation_context = "\n".join(
+            f"{turn['role'].capitalize()}: {turn['content']}" for turn in history
+        )
+        history_section = (
+            f"Recent conversation (use only to understand references in the latest question):\n{conversation_context}\n\n"
+            if conversation_context
+            else ""
         )
         prompt = f"""Use the following retrieved passages to answer the question.
 If none of the passages contains the answer, reply exactly: {NO_ANSWER}
 Include the supporting passage number, such as [1].
 Write equations in LaTeX using $...$ inline or $$...$$ on separate lines; do not use bare square brackets as math delimiters.
 
-Passages:
+{history_section}Passages:
 {labeled_context}
 
 Question: {question}
