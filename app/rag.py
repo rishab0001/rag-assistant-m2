@@ -108,6 +108,13 @@ When explaining a topic:
 IMPORTANT:
 Your primary purpose is to help users understand
 information, not simply repeat retrieved document text.
+
+MATHEMATICAL FORMATTING:
+- Put every inline mathematical expression inside $...$.
+- Put each standalone equation on its own line inside $$...$$.
+- Use valid LaTeX with balanced braces; for example, write $E_a = V_t - I_a(R_a + R_{se})$.
+- Do not output LaTeX commands or equation syntax as unformatted plain text.
+- Do not use Markdown emphasis markers inside math delimiters.
 """
 
 
@@ -129,11 +136,33 @@ def _format_bare_math(text: str) -> str:
         formula = match.group(1).strip().rstrip(" ;,.")
         return f"${formula}$"
 
-    return re.sub(
+    text = re.sub(
         r"(?<!\\)\[\s*([^\[\]\n]*?(?:\\[A-Za-z]+|=)[^\[\]\n]*?)\s*(?<!\\)\]",
         wrap_formula,
         text,
     )
+
+    def wrap_standalone_equation(line: str) -> str:
+        stripped = line.strip()
+        if (
+            not stripped
+            or stripped.startswith(("$", "#", "- ", "* ", ">", "1.", "2.", "3."))
+            or "$" in stripped
+        ):
+            return line
+
+        equation = re.fullmatch(
+            r"([A-Za-z][A-Za-z0-9{}_^]*)\s*=\s*(.+)", stripped
+        )
+        if not equation:
+            return line
+
+        right_hand_side = equation.group(2)
+        if not re.search(r"\\[A-Za-z]+|[_^]|[+*/]|[×·]", right_hand_side):
+            return line
+        return f"$$\n{stripped}\n$$"
+
+    return "\n".join(wrap_standalone_equation(line) for line in text.splitlines())
 
 
 class RagService:
@@ -271,7 +300,7 @@ class RagService:
         prompt = f"""Use the following retrieved passages to answer the question.
 If none of the passages contains the answer, reply exactly: {NO_ANSWER}
 Include the supporting passage number, such as [1].
-Write equations in LaTeX using $...$ inline or $$...$$ on separate lines; do not use bare square brackets as math delimiters.
+Write valid equations in LaTeX using $...$ inline or $$...$$ on separate lines. Balance all braces and delimiters. Put each standalone equation on its own line. Do not output raw LaTeX commands or bare square brackets as math delimiters.
 
 {history_section}Passages:
 {labeled_context}

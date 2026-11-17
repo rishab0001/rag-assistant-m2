@@ -37,6 +37,7 @@ type HealthResponse = {
 };
 
 const CONVERSATIONS_KEY = "ee-assistant-conversations";
+const MAX_HISTORY_MESSAGE_LENGTH = 2000;
 
 function readConversations(): Conversation[] {
   try {
@@ -62,6 +63,34 @@ function createConversationId() {
 function conversationTitle(question: string) {
   const title = question.trim();
   return title.length > 42 ? `${title.slice(0, 42).trim()}…` : title;
+}
+
+function formatApiError(payload: unknown, status: number): string {
+  if (typeof payload === "string" && payload.trim()) return payload.trim();
+  if (payload && typeof payload === "object") {
+    const body = payload as Record<string, unknown>;
+    for (const key of ["detail", "message", "error"]) {
+      const value = body[key];
+      if (typeof value === "string" && value.trim()) return value.trim();
+      if (Array.isArray(value)) {
+        const messages = value.map((item) => {
+          if (!item || typeof item !== "object") return String(item);
+          const entry = item as Record<string, unknown>;
+          const location = Array.isArray(entry.loc)
+            ? `${entry.loc.join(".")}: `
+            : "";
+          return typeof entry.msg === "string"
+            ? `${location}${entry.msg}`
+            : JSON.stringify(item) ?? String(item);
+        });
+        if (messages.length) return messages.join("; ");
+      }
+      if (value && typeof value === "object") {
+        return JSON.stringify(value) ?? String(value);
+      }
+    }
+  }
+  return `The request failed (HTTP ${status}).`;
 }
 
 function BrandMark() {
@@ -179,7 +208,10 @@ export default function WelcomePage() {
     setActiveConversationId(conversationId);
     const history = (activeConversation?.messages ?? [])
       .slice(-8)
-      .map(({ role, content }) => ({ role, content }));
+      .map(({ role, content }) => ({
+        role,
+        content: content.slice(0, MAX_HISTORY_MESSAGE_LENGTH),
+      }));
     appendMessage(conversationId, { role: "user", content: prompt, id: createConversationId() });
     setLoadingConversationId(conversationId);
 
@@ -189,14 +221,23 @@ export default function WelcomePage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ question: prompt, top_k: 5, history }),
       });
-      const payload = (await response.json()) as
-        AskResponse | { detail?: string };
+      const responseText = await response.text();
+      let payload: unknown;
+      try {
+        payload = responseText ? JSON.parse(responseText) : null;
+      } catch {
+        payload = responseText;
+      }
       if (!response.ok) {
-        throw new Error(
-          "detail" in payload && payload.detail
-            ? payload.detail
-            : "The request could not be completed.",
-        );
+        throw new Error(formatApiError(payload, response.status));
+      }
+      if (
+        !payload ||
+        typeof payload !== "object" ||
+        typeof (payload as Partial<AskResponse>).answer !== "string" ||
+        !Array.isArray((payload as Partial<AskResponse>).sources)
+      ) {
+        throw new Error("The API returned an invalid answer response.");
       }
       const result = payload as AskResponse;
       appendMessage(conversationId, {
