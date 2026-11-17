@@ -32,6 +32,10 @@ type AskResponse = {
   sources: Source[];
 };
 
+type HealthResponse = {
+  indexed_chunks: number;
+};
+
 const CONVERSATIONS_KEY = "ee-assistant-conversations";
 
 function readConversations(): Conversation[] {
@@ -80,6 +84,8 @@ export default function WelcomePage() {
     string | null
   >(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [indexedChunks, setIndexedChunks] = useState<number | null>(null);
+  const [indexUnavailable, setIndexUnavailable] = useState(false);
   const conversationEnd = useRef<HTMLDivElement>(null);
 
   const activeConversation = conversations.find(
@@ -93,6 +99,20 @@ export default function WelcomePage() {
   const recentConversations = [...conversations]
     .filter((conversation) => conversation.messages.length > 0)
     .sort((a, b) => b.updatedAt - a.updatedAt);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    fetch("/api/health", { signal: controller.signal })
+      .then((response) => {
+        if (!response.ok) throw new Error("Health request failed");
+        return response.json() as Promise<HealthResponse>;
+      })
+      .then((health) => setIndexedChunks(health.indexed_chunks))
+      .catch(() => {
+        if (!controller.signal.aborted) setIndexUnavailable(true);
+      });
+    return () => controller.abort();
+  }, []);
 
   useEffect(() => {
     const saved = conversations.filter(
@@ -295,7 +315,7 @@ export default function WelcomePage() {
         <section className="welcome-center" aria-labelledby="welcome-title">
           <div className="welcome-greeting">
             <BrandMark />
-            <h1 id="welcome-title">Hello!</h1>
+            <h1 id="welcome-title">Electric Motor Assistant</h1>
           </div>
         </section>
       ) : (
@@ -361,6 +381,36 @@ export default function WelcomePage() {
         aria-label="Ask a question"
       >
         <ChatInput onSubmit={ask} disabled={isLoading} />
+        {!hasConversation && (
+          <>
+            <div className="welcome-prompt-chips" aria-label="Suggested questions">
+              {[
+                "Explain how an AC motor works",
+                "Compare AC and DC motors",
+                "What is the motor torque equation?",
+              ].map((prompt) => (
+                <button
+                  className="welcome-prompt-chip"
+                  key={prompt}
+                  type="button"
+                  onClick={() => ask(prompt)}
+                >
+                  {prompt}
+                </button>
+              ))}
+            </div>
+            <div className="index-status" role="status">
+              <span className="index-status__dot" aria-hidden="true" />
+              {indexedChunks !== null
+                ? indexedChunks > 0
+                  ? `Indexed: ${indexedChunks.toLocaleString()} reference passages · Electric motor documents`
+                  : "No electric motor documents are indexed yet"
+                : indexUnavailable
+                  ? "Electric motor index status unavailable"
+                  : "Checking the electric motor document index…"}
+            </div>
+          </>
+        )}
       </section>
     </main>
   );

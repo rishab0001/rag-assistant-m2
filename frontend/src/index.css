@@ -1,19 +1,34 @@
 @import "katex/dist/katex.min.css";
 
-/* Interface palette: change these values to recolor the app in one place. */
 :root {
-  --color-lime: #ecf39e;
-  --color-teal: #619b8a;
-  --color-sage: #a1c181;
-  --color-ink: #1e2b22;
-  --color-white: #ffffff;
-  --color-shadow: rgb(97 155 138 / 20%);
+  /* Surfaces */
+  --bg-app: #141413;
+  --bg-sidebar: #191918;
+  --bg-elevated: #1f1f1d;
+  --bg-code: #10100f;
+
+  /* Borders */
+  --border: #2b2b28;
+  --border-subtle: #222220;
+
+  /* Typography ink */
+  --text-main: #e5e4e0;
+  --text-muted: #8e8d87;
+  --text-faint: #5c5b57;
+
+  /* Accents */
+  --accent-primary: #d4a359;
+  --accent-primary-tint: rgb(212 163 89 / 12%);
+  --accent-secondary: #7e9cd8;
+  --accent-secondary-tint: rgb(126 156 216 / 12%);
+
+  --shadow: rgb(0 0 0 / 24%);
 
   --font-llm-prose: 'Inter', 'Roboto', system-ui, -apple-system, sans-serif;
   --font-llm-code: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
 
-  color: var(--color-ink);
-  background: var(--color-lime);
+  color: var(--text-main);
+  background: var(--bg-app);
   font-family: var(--font-llm-prose);
   font-synthesis: none;
   text-rendering: optimizeLegibility;
@@ -27,4 +42,4 @@ html, body, #root { width: 100%; min-width: 320px; height: 100%; min-height: 100
 body { min-height: 100vh; }
 button, input { font: inherit; }
 button { color: inherit; }
-::selection { background: var(--color-sage); color: var(--color-ink); }
+::selection { background: var(--accent-primary-tint); color: var(--text-main); }
